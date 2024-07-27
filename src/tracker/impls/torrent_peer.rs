@@ -1,4 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
+use log::debug;
+
 use crate::tracker::structs::torrent_peer::TorrentPeer;
 
 impl TorrentPeer {
@@ -27,5 +29,22 @@ impl TorrentPeer {
     // potentially substitute localhost ip with external ip
     pub fn peer_addr_from_ip_and_port_and_opt_host_ip(remote_ip: IpAddr, port: u16) -> SocketAddr {
         SocketAddr::new(remote_ip, port)
+    }
+
+    pub fn merge(&self, another: &TorrentPeer) -> TorrentPeer {
+        let mut new = self.clone();
+        if let Some(ipv4) = another.peer_addr_v4 {
+            if new.peer_addr_v4.is_none() || new.peer_addr_v4 != another.peer_addr_v4 {
+                debug!("Old V4 Addr: {:?} | New V4 Addr: {}", self.peer_addr_v6, ipv4   );
+                new.peer_addr_v4 = Some(ipv4);
+            }
+        }  
+        if let Some(ipv6) = another.peer_addr_v6 {
+            if new.peer_addr_v6.is_none() || new.peer_addr_v6 != another.peer_addr_v6 {
+                debug!("Old V6 Addr: {:?} | New V6 Addr: {}", self.peer_addr_v4, ipv6);
+                new.peer_addr_v6 = Some(ipv6);
+            }
+        }
+       new
     }
 }

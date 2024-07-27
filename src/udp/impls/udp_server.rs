@@ -259,8 +259,8 @@ impl UdpServer {
                                 break;
                             }
                             peers.push(ResponsePeer::<Ipv4Addr> {
-                                ip_address: torrent_peer.peer_addr.ip().to_string().parse::<Ipv4Addr>().unwrap(),
-                                port: Port(torrent_peer.peer_addr.port()),
+                                ip_address: torrent_peer.peer_addr_v4.unwrap().ip().to_string().parse::<Ipv4Addr>().unwrap(),
+                                port: Port(torrent_peer.peer_addr_v4.unwrap().port()),
                             });
                             count += 1;
                         }
@@ -275,8 +275,8 @@ impl UdpServer {
                                 break;
                             }
                             peers6.push(ResponsePeer::<Ipv6Addr> {
-                                ip_address: torrent_peer.peer_addr.ip().to_string().parse::<Ipv6Addr>().unwrap(),
-                                port: Port(torrent_peer.peer_addr.port()),
+                                ip_address: torrent_peer.peer_addr_v6.unwrap().ip().to_string().parse::<Ipv6Addr>().unwrap(),
+                                port: Port(torrent_peer.peer_addr_v6.unwrap().port()),
                             });
                             count += 1;
                         }
@@ -293,8 +293,8 @@ impl UdpServer {
                             break;
                         }
                         peers.push(ResponsePeer::<Ipv4Addr> {
-                            ip_address: torrent_peer.peer_addr.ip().to_string().parse::<Ipv4Addr>().unwrap(),
-                            port: Port(torrent_peer.peer_addr.port()),
+                            ip_address: torrent_peer.peer_addr_v4.unwrap().ip().to_string().parse::<Ipv4Addr>().unwrap(),
+                            port: Port(torrent_peer.peer_addr_v4.unwrap().port()),
                         });
                         count += 1;
                     }
@@ -309,8 +309,8 @@ impl UdpServer {
                             break;
                         }
                         peers6.push(ResponsePeer::<Ipv6Addr> {
-                            ip_address: torrent_peer.peer_addr.ip().to_string().parse::<Ipv6Addr>().unwrap(),
-                            port: Port(torrent_peer.peer_addr.port()),
+                            ip_address: torrent_peer.peer_addr_v6.unwrap().ip().to_string().parse::<Ipv6Addr>().unwrap(),
+                            port: Port(torrent_peer.peer_addr_v6.unwrap().port()),
                         });
                         count += 1;
                     }

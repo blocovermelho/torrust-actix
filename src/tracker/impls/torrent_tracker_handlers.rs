@@ -242,9 +242,11 @@ impl TorrentTracker {
 
     pub async fn handle_announce(&self, data: Arc<TorrentTracker>, announce_query: AnnounceQueryRequest, user_key: Option<UserId>) -> Result<(TorrentPeer, TorrentEntry), CustomError>
     {
-        let mut torrent_peer = TorrentPeer {
+
+        let mut torrent_peer : TorrentPeer  = TorrentPeer {
             peer_id: announce_query.peer_id,
-            peer_addr: SocketAddr::new(announce_query.remote_addr, announce_query.port),
+            peer_addr_v4: None,
+            peer_addr_v6: None,
             peer_offer_id: None,
             peer_offer: None,
             updated: std::time::Instant::now(),
@@ -253,10 +255,28 @@ impl TorrentTracker {
             left: NumberOfBytes(announce_query.left as i64),
             event: AnnounceEvent::None,
         };
+
+        if let Some(torrent) = data.get_torrent(announce_query.info_hash) {
+            let peer = torrent.peers.get(&announce_query.peer_id);
+            let seed = torrent.seeds.get(&announce_query.peer_id);
+
+            if let Some(tp) = peer.or(seed) {
+                torrent_peer = tp.clone();
+            }
+        }
+
+        let addr = SocketAddr::new(announce_query.remote_addr, announce_query.port);
+        let ip_type = if addr.is_ipv4() { "4" } else { "6" }; 
+
+        match addr {
+            SocketAddr::V4(_) => torrent_peer.peer_addr_v4 = Some(addr.clone()),
+            SocketAddr::V6(_) => torrent_peer.peer_addr_v6 = Some(addr.clone()),
+        }
+
         match announce_query.event {
             AnnounceEvent::Started | AnnounceEvent::None => {
                 torrent_peer.event = AnnounceEvent::Started;
-                debug!("[HANDLE ANNOUNCE] Adding to infohash {} peerid {}", announce_query.info_hash, announce_query.peer_id.to_string());
+                debug!("[HANDLE ANNOUNCE::Started] Adding to infohash {} peerid {} with IPv{}", announce_query.info_hash, announce_query.peer_id.to_string(), ip_type);
                 debug!("[DEBUG] Calling add_torrent_peer");
                 let torrent_entry = data.add_torrent_peer(
                     announce_query.info_hash,
@@ -282,7 +302,7 @@ impl TorrentTracker {
             }
             AnnounceEvent::Stopped => {
                 torrent_peer.event = AnnounceEvent::Stopped;
-                debug!("[HANDLE ANNOUNCE] Removing from infohash {} peerid {}", announce_query.info_hash, announce_query.peer_id.to_string());
+                debug!("[HANDLE ANNOUNCE::Stopped] Removing from infohash {} peerid {}", announce_query.info_hash, announce_query.peer_id.to_string());
                 debug!("[DEBUG] Calling remove_torrent_peer");
                 let torrent_entry = match data.remove_torrent_peer(
                     announce_query.info_hash,
@@ -315,7 +335,7 @@ impl TorrentTracker {
             }
             AnnounceEvent::Completed => {
                 torrent_peer.event = AnnounceEvent::Completed;
-                debug!("[HANDLE ANNOUNCE] Adding to infohash {} peerid {}", announce_query.info_hash, announce_query.peer_id.to_string());
+                debug!("[HANDLE ANNOUNCE::Completed] Adding to infohash {} peerid {} with IPv{}", announce_query.info_hash, announce_query.peer_id.to_string(), ip_type);
                 debug!("[DEBUG] Calling add_torrent_peer");
                 let torrent_entry = data.add_torrent_peer(
                     announce_query.info_hash,

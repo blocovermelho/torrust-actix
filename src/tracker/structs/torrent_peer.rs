@@ -9,7 +9,8 @@ use crate::tracker::structs::peer_id::PeerId;
 #[derive(PartialEq, Eq, Debug, Clone, Serialize)]
 pub struct TorrentPeer {
     pub peer_id: PeerId,
-    pub peer_addr: SocketAddr,
+    pub peer_addr_v4: Option<SocketAddr>,
+    pub peer_addr_v6: Option<SocketAddr>,
     pub peer_offer_id: Option<String>,
     pub peer_offer: Option<String>,
     #[serde(with = "serde_millis")]
