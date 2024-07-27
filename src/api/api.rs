@@ -1,3 +1,4 @@
+use core::hash;
 use std::fs::File;
 use std::future::Future;
 use std::io::BufReader;
@@ -11,13 +12,16 @@ use actix_remote_ip::RemoteIP;
 use actix_web::{App, http, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::dev::ServerHandle;
 use actix_web::http::header::ContentType;
-use actix_web::web::{Data, ServiceConfig};
+use actix_web::web::{Data, Path, ServiceConfig};
 use log::{error, info};
 use serde_json::json;
 use crate::api::structs::query_token::QueryToken;
 use crate::config::structs::configuration::Configuration;
 use crate::stats::enums::stats_event::StatsEvent;
+use crate::tracker::impls::info_hash;
+use crate::tracker::structs::info_hash::InfoHash;
 use crate::tracker::structs::torrent_tracker::TorrentTracker;
+use crate::udp::enums::request;
 
 pub fn api_service_cors() -> Cors
 {
@@ -35,6 +39,7 @@ pub fn api_service_routes(data: Arc<TorrentTracker>) -> Box<dyn Fn(&mut ServiceC
         cfg.app_data(Data::new(data.clone()));
         cfg.default_service(web::route().to(api_service_not_found));
         cfg.service(web::resource("api/stats").route(web::get().to(api_service_stats_get)));
+        cfg.service(web::resource("api/torrent/{infohash}").route(web::get().to(api_service_torrent_get)));
     })
 }
 
@@ -47,6 +52,36 @@ pub async fn api_service_stats_get(request: HttpRequest, remote_ip: RemoteIP, da
 
     let stats = data.get_stats();
     HttpResponse::Ok().content_type(ContentType::json()).json(stats)
+}
+
+pub async fn api_service_torrent_get(request: HttpRequest, remote_ip: RemoteIP, path: Path<String>, data: Data<Arc<TorrentTracker>>) -> HttpResponse 
+{
+    api_service_stats_log(remote_ip.0, data.clone()).await;
+
+    let params = web::Query::<QueryToken>::from_query(request.query_string()).unwrap();
+    if let Some(response) = api_service_token(params.token.clone(), data.config.clone()).await { return response; }
+
+    let info_hash = InfoHash::from_str(path.as_str());
+
+    match info_hash {
+        Ok(info_hash) => {
+            match data.get_torrent(info_hash) {
+                Some(torrent) => {
+                    HttpResponse::Ok().content_type(ContentType::json()).json(torrent)
+                },
+                None => {
+                    HttpResponse::Ok().content_type(ContentType::json()).json(json!({
+                        "status":"torrent does not exist"
+                    }))
+                },
+            }
+        },
+        Err(_) => {
+            HttpResponse::Ok().content_type(ContentType::json()).json(json!({
+                "status":"invalid infohash"
+            }))
+        },
+    }
 }
 
 pub async fn api_service(
