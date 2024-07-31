@@ -14,6 +14,38 @@ use crate::tracker::structs::torrent_peers::TorrentPeers;
 use crate::tracker::structs::torrent_tracker::TorrentTracker;
 
 impl TorrentTracker {
+
+    pub fn get_torrent_peers_id(&self, info_hash: InfoHash, amount: usize, ip_type: TorrentPeersType, self_id: PeerId) -> Option<TorrentPeers> {
+        let mut returned_data = TorrentPeers {
+            seeds_ipv4: BTreeMap::new(),
+            seeds_ipv6: BTreeMap::new(),
+            peers_ipv4: BTreeMap::new(),
+            peers_ipv6: BTreeMap::new()
+        };
+        match self.get_torrent(info_hash) {
+            None => { None }
+            Some(data) => {
+                match ip_type {
+                    TorrentPeersType::All => {
+                        returned_data.seeds_ipv4 = self.get_peers_id(data.seeds.clone(), TorrentPeersType::IPv4, self_id, amount).unwrap_or_default();
+                        returned_data.seeds_ipv6 = self.get_peers_id(data.seeds.clone(), TorrentPeersType::IPv6, self_id, amount).unwrap_or_default();
+                        returned_data.peers_ipv4 = self.get_peers_id(data.peers.clone(), TorrentPeersType::IPv4, self_id, amount).unwrap_or_default();
+                        returned_data.peers_ipv6 = self.get_peers_id(data.peers.clone(), TorrentPeersType::IPv6, self_id, amount).unwrap_or_default();
+                    }
+                    TorrentPeersType::IPv4 => {
+                        returned_data.seeds_ipv4 = self.get_peers_id(data.seeds.clone(), TorrentPeersType::IPv4, self_id, amount).unwrap_or_default();
+                        returned_data.peers_ipv4 = self.get_peers_id(data.peers.clone(), TorrentPeersType::IPv4, self_id, amount).unwrap_or_default();
+                    }
+                    TorrentPeersType::IPv6 => {
+                        returned_data.seeds_ipv6 = self.get_peers_id(data.seeds.clone(), TorrentPeersType::IPv6, self_id, amount).unwrap_or_default();
+                        returned_data.peers_ipv6 = self.get_peers_id(data.peers.clone(), TorrentPeersType::IPv6, self_id, amount).unwrap_or_default();
+                    }
+                }
+                Some(returned_data)
+            }
+        }
+    }
+
     pub fn get_torrent_peers(&self, info_hash: InfoHash, amount: usize, ip_type: TorrentPeersType, self_ip: Option<IpAddr>) -> Option<TorrentPeers>
     {
         let mut returned_data = TorrentPeers {
@@ -43,6 +75,54 @@ impl TorrentTracker {
                 }
                 Some(returned_data)
             }
+        }
+    }
+
+    pub fn get_peers_id(&self, peers: BTreeMap<PeerId, TorrentPeer>, type_ip: TorrentPeersType, self_id : PeerId, amount: usize) -> Option<BTreeMap<PeerId, TorrentPeer>> {
+        if amount != 0  {
+            return peers.iter().take(amount).filter(|(id, _)| **id != self_id).map(|(peer_id, torrent_peer)| {
+                match type_ip {
+                    TorrentPeersType::All => {
+                        Some((*peer_id, torrent_peer.clone()))
+                    },
+                    TorrentPeersType::IPv4 => {
+                        if torrent_peer.peer_addr_v4.is_some() {
+                            Some((*peer_id, torrent_peer.clone()))
+                        } else {
+                            None
+                        }
+                    }
+                    TorrentPeersType::IPv6 => {
+                        if torrent_peer.peer_addr_v6.is_some() {
+                            Some((*peer_id, torrent_peer.clone()))
+                        } else {
+                            None
+                        }
+                    },
+                }
+            }).collect()
+        } else  {
+            return peers.iter().filter(|(id, _)| **id != self_id).map(|(peer_id, torrent_peer)| {
+                match type_ip {
+                    TorrentPeersType::All => {
+                        Some((*peer_id, torrent_peer.clone()))
+                    },
+                    TorrentPeersType::IPv4 => {
+                        if torrent_peer.peer_addr_v4.is_some() {
+                            Some((*peer_id, torrent_peer.clone()))
+                        } else {
+                            None
+                        }
+                    }
+                    TorrentPeersType::IPv6 => {
+                        if torrent_peer.peer_addr_v6.is_some() {
+                            Some((*peer_id, torrent_peer.clone()))
+                        } else {
+                            None
+                        }
+                    },
+                }
+            }).collect();
         }
     }
 

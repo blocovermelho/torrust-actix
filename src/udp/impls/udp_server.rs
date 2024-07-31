@@ -17,6 +17,7 @@ use crate::udp::enums::server_error::ServerError;
 use crate::udp::structs::announce_interval::AnnounceInterval;
 use crate::udp::structs::announce_request::AnnounceRequest;
 use crate::udp::structs::announce_response::AnnounceResponse;
+use crate::udp::structs::announce_response_raw::AnnounceResponseRaw;
 use crate::udp::structs::connect_request::ConnectRequest;
 use crate::udp::structs::connect_response::ConnectResponse;
 use crate::udp::structs::connection_id::ConnectionId;
@@ -24,6 +25,7 @@ use crate::udp::structs::error_response::ErrorResponse;
 use crate::udp::structs::number_of_downloads::NumberOfDownloads;
 use crate::udp::structs::number_of_peers::NumberOfPeers;
 use crate::udp::structs::port::Port;
+use crate::udp::structs::responce_peer_raw::ResponsePeerRaw;
 use crate::udp::structs::response_peer::ResponsePeer;
 use crate::udp::structs::scrape_request::ScrapeRequest;
 use crate::udp::structs::scrape_response::ScrapeResponse;
@@ -140,7 +142,7 @@ impl UdpServer {
                 UdpServer::handle_udp_connect(remote_addr, &connect_request, tracker).await
             }
             Request::Announce(announce_request) => {
-                UdpServer::handle_udp_announce(remote_addr, &announce_request, tracker).await
+                UdpServer::handle_udp_announce_dualstack(remote_addr, &announce_request, tracker).await
             }
             Request::Scrape(scrape_request) => {
                 UdpServer::handle_udp_scrape(remote_addr, &scrape_request, tracker).await
@@ -163,6 +165,139 @@ impl UdpServer {
             }
         };
         Ok(response)
+    }
+
+    pub async fn handle_udp_announce_dualstack(remote_addr: SocketAddr, request: &AnnounceRequest, tracker: Arc<TorrentTracker>) -> Result<Response, ServerError> {
+        let (peer, entry) = match tracker.handle_announce(tracker.clone(), AnnounceQueryRequest {
+            info_hash: request.info_hash,
+            peer_id: request.peer_id,
+            port: request.port.0,
+            uploaded: request.bytes_uploaded.0 as u64,
+            downloaded: request.bytes_downloaded.0 as u64,
+            left: request.bytes_downloaded.0 as u64,
+            compact: false,
+            no_peer_id: false,
+            event: request.event,
+            remote_addr: remote_addr.ip(),
+            numwant: request.peers_wanted.0 as u64,
+        }, None).await {
+            Ok(result) => result,
+            Err(_) => return Err(ServerError::InternalServerError),
+        };
+
+        let torrent_peers = tracker.get_torrent_peers_id(request.info_hash, 72, TorrentPeersType::All, peer.peer_id);
+        let mut peers: Vec<ResponsePeerRaw> = Vec::new();
+        let mut count = 0;
+
+        let supports_v4 = peer.peer_addr_v4.is_some();
+        let supports_v6 = peer.peer_addr_v6.is_some();
+
+        // If there is still data left to be dowloaded
+        if request.bytes_left.0 as u64 != 0 {
+            match torrent_peers {
+                None => {},
+                Some(ref torrent_peers_unwrapped) => {
+                    let mut all_seeds = torrent_peers_unwrapped.seeds_ipv4.clone();
+                    all_seeds.append(&mut torrent_peers_unwrapped.seeds_ipv6.clone());
+
+                    for (_,peer) in all_seeds.iter() {
+                        if count > 72 {
+                            break;
+                        }
+
+                        if supports_v4 {
+                            match peer.peer_addr_v4 {
+                                Some(v4) =>  {
+                                    peers.push(ResponsePeer {
+                                        ip_address: v4.ip().to_string().parse::<Ipv4Addr>().unwrap(),
+                                        port: Port(v4.port()),
+                                    }.into());
+
+                                    count += 1;
+                                },
+                                None => {},
+                            }
+                        }
+
+                        if supports_v6 {
+                            match peer.peer_addr_v6 {
+                                Some(v6) => {
+                                    peers.push(ResponsePeer {
+                                        ip_address: v6.ip().to_string().parse::<Ipv6Addr>().unwrap(),
+                                        port: Port(v6.port()),
+                                    }.into());
+
+                                    count += 1;
+                                },
+                                None => {},
+                            }
+                        }
+                    }
+                },
+            }
+        } else {
+            // Add to seeds
+            match torrent_peers {
+                None => {},
+                Some(ref torrent_peers_unwrapped) => {
+                    let mut all_peers = torrent_peers_unwrapped.peers_ipv4.clone();
+                    all_peers.append(&mut torrent_peers_unwrapped.peers_ipv6.clone());
+
+                    for (_,peer) in all_peers.iter() {
+                        if count > 72 {
+                            break;
+                        }
+
+                        if supports_v4 {
+                            match peer.peer_addr_v4 {
+                                Some(v4) =>  {
+                                    peers.push(ResponsePeer {
+                                        ip_address: v4.ip().to_string().parse::<Ipv4Addr>().unwrap(),
+                                        port: Port(v4.port()),
+                                    }.into());
+
+                                    count += 1;
+                                },
+                                None => {},
+                            }
+                        }
+
+                        if supports_v6 {
+                            match peer.peer_addr_v6 {
+                                Some(v6) => {
+                                    peers.push(ResponsePeer {
+                                        ip_address: v6.ip().to_string().parse::<Ipv6Addr>().unwrap(),
+                                        port: Port(v6.port()),
+                                    }.into());
+
+                                    count += 1;
+                                },
+                                None => {},
+                            }
+                        }
+                    }
+                },
+            }
+        }
+
+        // let combined_peers : Vec<ResponsePeer<I>> = peers4.append(&mut peers6);
+
+        let announce_response = Response::from(AnnounceResponseRaw {
+            transaction_id: request.transaction_id,
+            announce_interval: AnnounceInterval(tracker.config.interval.unwrap() as i32),
+            leechers: NumberOfPeers(entry.peers.len() as i32),
+            seeders: NumberOfPeers(entry.seeds.len() as i32),
+            peers
+        });
+
+
+        if remote_addr.is_ipv4() {
+            tracker.update_stats(StatsEvent::Udp4AnnouncesHandled, 1);
+        } else {
+            tracker.update_stats(StatsEvent::Udp6AnnouncesHandled, 1);
+        }
+
+        Ok(announce_response)
     }
 
     pub async fn handle_udp_announce(remote_addr: SocketAddr, request: &AnnounceRequest, tracker: Arc<TorrentTracker>) -> Result<Response, ServerError> {

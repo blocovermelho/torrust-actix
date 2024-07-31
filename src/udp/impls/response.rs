@@ -6,6 +6,7 @@ use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use crate::udp::enums::response::Response;
 use crate::udp::structs::announce_interval::AnnounceInterval;
 use crate::udp::structs::announce_response::AnnounceResponse;
+use crate::udp::structs::announce_response_raw::AnnounceResponseRaw;
 use crate::udp::structs::connect_response::ConnectResponse;
 use crate::udp::structs::connection_id::ConnectionId;
 use crate::udp::structs::error_response::ErrorResponse;
@@ -32,6 +33,12 @@ impl From<AnnounceResponse<Ipv4Addr>> for Response {
 impl From<AnnounceResponse<Ipv6Addr>> for Response {
     fn from(r: AnnounceResponse<Ipv6Addr>) -> Self {
         Self::AnnounceIpv6(r)
+    }
+}
+
+impl From<AnnounceResponseRaw> for Response {
+    fn from(r: AnnounceResponseRaw) -> Self {
+        Self::AnnounceRaw(r)
     }
 }
 
@@ -96,6 +103,18 @@ impl Response {
 
                 bytes.write_all(r.message.as_bytes())?;
             }
+            Response::AnnounceRaw(r) => {
+                bytes.write_i32::<NetworkEndian>(1)?;
+                bytes.write_i32::<NetworkEndian>(r.transaction_id.0)?;
+                bytes.write_i32::<NetworkEndian>(r.announce_interval.0)?;
+                bytes.write_i32::<NetworkEndian>(r.leechers.0)?;
+                bytes.write_i32::<NetworkEndian>(r.seeders.0)?;
+
+                for peer in r.peers.iter() {
+                    bytes.write_all(&peer.ip_address)?;
+                    bytes.write_u16::<NetworkEndian>(peer.port.0)?;
+                }
+            },
         }
 
         Ok(())
